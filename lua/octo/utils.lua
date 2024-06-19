@@ -158,8 +158,8 @@ function M.parse_remote_url(url, aliases)
     repo = chunks[#chunks]
   end
 
-  if aliases[host] then
-    host = aliases[host]
+  for alias, rhost in pairs(aliases) do
+    host = string.gsub(host, alias, rhost)
   end
   if not M.is_blank(host) and not M.is_blank(repo) then
     return {
