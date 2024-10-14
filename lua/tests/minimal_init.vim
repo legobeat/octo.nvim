@@ -8,6 +8,6 @@ runtime! plugin/octo.nvim
 
 lua << EOF
 require("plenary/busted")
-vim.cmd[[luafile ./tests/test_utils.lua]]
+vim.cmd[[luafile ./test_utils.lua]]
 require("octo").setup()
 EOF
