@@ -8,6 +8,6 @@ runtime! plugin/octo.nvim
 
 lua << EOF
 require("plenary/busted")
-require("test_utils")
+require("tests/test_utils")
 require("octo").setup()
 EOF
