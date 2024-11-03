@@ -94,7 +94,7 @@ function M.setup()
         picker.search(opts)
       end,
       reload = function()
-        M.reload()
+        M.reload { verbose = true }
       end,
       browser = function()
         navigation.open_in_browser()
@@ -163,10 +163,11 @@ function M.setup()
           prompt = prompt .. k .. ":" .. v .. " "
         end
         opts.prompt = prompt
+        opts.search_prs = true
         picker.search(opts)
       end,
       reload = function()
-        M.reload()
+        M.reload { verbose = true }
       end,
       browser = function()
         navigation.open_in_browser()
@@ -1440,8 +1441,8 @@ function M.remove_project_v2_card()
   end)
 end
 
-function M.reload(bufnr)
-  require("octo").load_buffer(bufnr)
+function M.reload(opts)
+  require("octo").load_buffer(opts)
 end
 
 function random_hex_color()
@@ -1674,10 +1675,14 @@ end
 function M.copy_url()
   local bufnr = vim.api.nvim_get_current_buf()
   local buffer = octo_buffers[bufnr]
-  if not buffer then
-    return
+  local url
+
+  if buffer then
+    url = buffer.node.url
+  else
+    url = utils.get_remote_url()
   end
-  local url = buffer.node.url
+
   vim.fn.setreg("+", url, "c")
   utils.info("Copied URL '" .. url .. "' to the system clipboard (+ register)")
 end

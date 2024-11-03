@@ -71,6 +71,22 @@ M.file_status_map = {
   renamed = "R",
 }
 
+M.checks_hl_map = {
+  ERROR = "OctoStateDismissed",
+  EXPECTED = "OctoStatePending",
+  FAILURE = "OctoStateDismissed",
+  PENDING = "OctoStatePending",
+  SUCCESS = "OctoStateApproved",
+}
+
+M.checks_message_map = {
+  ERROR = "× errored",
+  EXPECTED = " expected",
+  FAILURE = "× failed",
+  PENDING = " pending",
+  SUCCESS = "✓ passed",
+}
+
 function M.trim(str)
   if type(vim.fn.trim) == "function" then
     return vim.fn.trim(str)
@@ -211,6 +227,16 @@ function M.get_remote()
     host = "github.com",
     repo = nil,
   }
+end
+
+function M.get_remote_url()
+  local host = M.get_remote_host()
+  local remote_name = M.get_remote_name()
+  if not host or not remote_name then
+    M.error "No remote repository found"
+    return
+  end
+  return "https://" .. host .. "/" .. remote_name
 end
 
 function M.get_all_remotes()

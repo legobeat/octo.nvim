@@ -335,7 +335,6 @@ function M.pull_requests(opts)
         for _, pull in ipairs(pull_requests) do
           -- modify result to be consistent with GraphQL output.
           pull["__typename"] = "pull_request"
-          pull.author.username = pull.author.login
           pull.repository = { nameWithOwner = pull.headRepositoryOwner.login .. "/" .. pull.headRepository.name }
 
           local author_id = "?"
@@ -344,8 +343,8 @@ function M.pull_requests(opts)
             if pull.author.id ~= nil then
               author_id = pull.author.id
             end
-            if pull.author.username ~= nil then
-              author_name = pull.author.username
+            if pull.author.login ~= nil then
+              author_name = pull.author.login
             end
           end
           author_ids[author_id] = true
@@ -596,6 +595,10 @@ function M.search(opts)
         end)
         map("i", cfg.picker_config.mappings.open_in_browser.lhs, open_in_browser())
         map("i", cfg.picker_config.mappings.copy_url.lhs, copy_url())
+        if opts.search_prs then
+          map("i", cfg.picker_config.mappings.checkout_pr.lhs, checkout_pull_request())
+          map("i", cfg.picker_config.mappings.merge_pr.lhs, merge_pull_request())
+        end
         return true
       end,
     })

@@ -41,8 +41,6 @@ return function(opts)
         "api",
         "graphql",
         "--paginate",
-        "--limit",
-        tostring(cfg.pull_requests.limit),
         "--jq",
         ".",
         "-f",

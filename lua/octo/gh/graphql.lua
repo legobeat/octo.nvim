@@ -1868,6 +1868,9 @@ query($endCursor: String) {
           }
         }
       }
+      statusCheckRollup {
+        state
+      }
     }
   }
 }
@@ -2108,6 +2111,8 @@ query($endCursor: String) {
         title
         url
         repository { nameWithOwner }
+        state
+        stateReason
       }
       pageInfo {
         hasNextPage
@@ -2129,7 +2134,9 @@ query($endCursor: String) {
         repository { nameWithOwner }
         headRefName
         isDraft
-        author { username: login }
+        state
+        stateReason
+        author { login }
       }
       pageInfo {
         hasNextPage
@@ -2149,13 +2156,17 @@ query {
         number
         url
         title
+        state
         repository { nameWithOwner }
+        stateReason
       }
       ... on PullRequest {
         __typename
         number
         title
         url
+        state
+        isDraft
         repository { nameWithOwner }
       }
     }
