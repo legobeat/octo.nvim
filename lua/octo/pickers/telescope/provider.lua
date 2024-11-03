@@ -296,7 +296,6 @@ function M.pull_requests(opts)
   local args = {
     "pr",
     "list",
-    "--paginate",
     "--limit",
     tostring(opts.limit),
     "--json",
