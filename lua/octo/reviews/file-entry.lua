@@ -275,12 +275,15 @@ end
 function FileEntry:show_diff()
   for _, bufid in ipairs { self.left_bufid, self.right_bufid } do
     vim.api.nvim_buf_call(bufid, function()
-      pcall(vim.cmd, [[filetype detect]])
-      pcall(vim.cmd, [[doau BufEnter]])
-      pcall(vim.cmd, [[diffthis]])
+      -- Only trigger ft detect event for non local files to avoid triggering ftplugins for nothing
+      if vim.fn.bufname(bufid):match "octo://*" then
+        pcall(vim.cmd.filetype, [[detect]])
+      end
+      pcall(vim.cmd.doau, [[BufEnter]])
+      pcall(vim.cmd.diffthis)
       -- Scroll to trigger the scrollbind and sync the windows. This works more
       -- consistently than calling `:syncbind`.
-      pcall(vim.cmd, [[exec "normal! \<c-y>"]])
+      pcall(vim.cmd.exec, [["normal! \<c-y>"]])
     end)
   end
 end
@@ -382,7 +385,9 @@ function FileEntry:place_signs()
 
           -- place the virtual text only on first line
           local last_date = comment.lastEditedAt ~= vim.NIL and comment.lastEditedAt or comment.createdAt
-          local vt_msg = string.format("    %d comments (%s)", #thread.comments.nodes, utils.format_date(last_date))
+          local comments_count = #thread.comments.nodes
+          local comments_word = comments_count == 1 and "comment" or "comments"
+          local vt_msg = string.format("    %d %s (%s)", comments_count, comments_word, utils.format_date(last_date))
           --vim.api.nvim_buf_set_virtual_text(split.bufnr, -1, startLine - 1, { { vt_msg, "Comment" } }, {})
           local opts = {
             virt_text = { { vt_msg, "Comment" } },

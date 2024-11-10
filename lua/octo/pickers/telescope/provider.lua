@@ -76,7 +76,9 @@ local function open(command)
     elseif command == "tab" then
       vim.cmd [[:tab sb %]]
     end
-    utils.get(selection.kind, selection.repo, selection.value)
+    if selection then
+      utils.get(selection.kind, selection.repo, selection.value)
+    end
   end
 end
 
@@ -286,42 +288,76 @@ end
 
 function M.pull_requests(opts)
   opts = opts or {}
-  if not opts.states then
-    opts.states = "OPEN"
-  end
-  local filter = get_filter(opts, "pull_request")
-  if utils.is_blank(opts.repo) then
-    opts.repo = utils.get_remote_name()
-  end
-  if not opts.repo then
-    utils.error "Cannot find repo"
-    return
+  local cfg = octo_config.values
+
+  if not opts.limit then
+    opts.limit = cfg.pull_requests.limit
   end
 
-  local owner, name = utils.split_repo(opts.repo)
-  local cfg = octo_config.values
-  local order_by = cfg.pull_requests.order_by
-  local query =
-    graphql("pull_requests_query", owner, name, filter, order_by.field, order_by.direction, { escape = false })
   utils.info "Fetching pull requests (this may take a while) ..."
+  local args = {
+    "pr",
+    "list",
+    "--limit",
+    tostring(opts.limit),
+    "--json",
+    "author,number,title,url,headRepository,headRepositoryOwner,headRefName,isDraft",
+  }
+
+  if opts.repo then
+    table.insert(args, "-R")
+    table.insert(args, opts.repo)
+  end
+
+  local keys = { "author", "assignee", "label", "state", "head", "base", "search" }
+  for _, key in ipairs(keys) do
+    if opts[key] then
+      table.insert(args, "--" .. key)
+      table.insert(args, opts[key])
+    end
+  end
+
   gh.run {
-    args = { "api", "graphql", "--paginate", "--jq", ".", "-f", string.format("query=%s", query) },
+    args = args,
+
     cb = function(output, stderr)
       if stderr and not utils.is_blank(stderr) then
         utils.error(stderr)
       elseif output then
-        local resp = utils.aggregate_pages(output, "data.repository.pullRequests.nodes")
-        local pull_requests = resp.data.repository.pullRequests.nodes
+        local pull_requests = vim.fn.json_decode(output)
         if #pull_requests == 0 then
           utils.error(string.format("There are no matching pull requests in %s.", opts.repo))
           return
         end
         local max_number = -1
+        local username_col_len = 0
+        local branch_name_col_len = 0
+        local author_ids = {}
+        local author_count = 0
         for _, pull in ipairs(pull_requests) do
-          if #tostring(pull.number) > max_number then
-            max_number = #tostring(pull.number)
+          -- modify result to be consistent with GraphQL output.
+          pull["__typename"] = "pull_request"
+          pull.repository = { nameWithOwner = pull.headRepositoryOwner.login .. "/" .. pull.headRepository.name }
+
+          local author_id = "?"
+          local author_name = "?"
+          if pull.author ~= nil then
+            if pull.author.id ~= nil then
+              author_id = pull.author.id
+            end
+            if pull.author.login ~= nil then
+              author_name = pull.author.login
+            end
           end
+          author_ids[author_id] = true
+          username_col_len = math.min(20, math.max(username_col_len, #tostring(author_name)))
+          max_number = math.max(max_number, #tostring(pull.number))
+          branch_name_col_len = math.min(20, math.max(branch_name_col_len, #tostring(pull.headRefName)))
         end
+        for _ in pairs(author_ids) do
+          author_count = author_count + 1
+        end
+
         opts.preview_title = opts.preview_title or ""
         opts.prompt_title = opts.prompt_title or ""
         opts.results_title = opts.results_title or ""
@@ -329,7 +365,12 @@ function M.pull_requests(opts)
           .new(opts, {
             finder = finders.new_table {
               results = pull_requests,
-              entry_maker = entry_maker.gen_from_issue(max_number),
+              entry_maker = entry_maker.gen_from_pull_request(
+                max_number,
+                username_col_len,
+                branch_name_col_len,
+                author_count
+              ),
             },
             sorter = conf.generic_sorter(opts),
             previewer = previewers.issue.new(opts),
@@ -556,6 +597,10 @@ function M.search(opts)
         end)
         map("i", cfg.picker_config.mappings.open_in_browser.lhs, open_in_browser())
         map("i", cfg.picker_config.mappings.copy_url.lhs, copy_url())
+        if opts.search_prs then
+          map("i", cfg.picker_config.mappings.checkout_pr.lhs, checkout_pull_request())
+          map("i", cfg.picker_config.mappings.merge_pr.lhs, merge_pull_request())
+        end
         return true
       end,
     })
@@ -811,6 +856,7 @@ local function get_user_requester()
             users[user.login] = {
               id = user.id,
               login = user.login,
+              name = user.name,
             }
           end
         elseif user.teams and user.teams.totalCount > 0 then
@@ -863,6 +909,7 @@ local function get_users(query_name, node_name)
       table.insert(users, {
         id = user.id,
         login = user.login,
+        name = user.name,
       })
     end
   end

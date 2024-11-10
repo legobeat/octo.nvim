@@ -71,6 +71,62 @@ M.file_status_map = {
   renamed = "R",
 }
 
+M.checks_hl_map = {
+  ERROR = "OctoStateDismissed",
+  EXPECTED = "OctoStatePending",
+  FAILURE = "OctoStateDismissed",
+  PENDING = "OctoStatePending",
+  SUCCESS = "OctoStateApproved",
+}
+
+M.checks_message_map = {
+  ERROR = "× ERRORED",
+  EXPECTED = " EXPECTED",
+  FAILURE = "× FAILED",
+  PENDING = " PENDING",
+  SUCCESS = "✓ PASSED",
+}
+
+M.mergeable_hl_map = {
+  CONFLICTING = "OctoStateDismissed",
+  MERGEABLE = "OctoStateApproved",
+  UNKNOWN = "OctoStatePending",
+}
+
+M.mergeable_message_map = {
+  CONFLICTING = "× CONFLICTING",
+  MERGEABLE = "✓ MERGEABLE",
+  UNKNOWN = " PENDING",
+}
+
+M.merge_state_hl_map = {
+  BEHIND = "OctoNormal",
+  BLOCKED = "OctoStateDismissed",
+  CLEAN = "OctoStateApproved",
+  DIRTY = "OctoStateDismissed",
+  DRAFT = "OctoStateDraftFloat",
+  HAS_HOOKS = "OctoStateApproved",
+  UNKNOWN = "OctoStatePending",
+  UNSTABLE = "OctoStateDismissed",
+}
+
+M.merge_state_message_map = {
+  BEHIND = "- OUT-OF-DATE",
+  BLOCKED = "× BLOCKED",
+  CLEAN = "✓ CLEAN",
+  DIRTY = "× DIRTY",
+  DRAFT = "= DRAFT",
+  HAS_HOOKS = "✓ HAS-HOOKS",
+  UNKNOWN = " PENDING",
+  UNSTABLE = "! UNSTABLE",
+}
+
+M.auto_merge_method_map = {
+  MERGE = "commit",
+  REBASE = "rebase",
+  SQUASH = "squash",
+}
+
 function M.trim(str)
   if type(vim.fn.trim) == "function" then
     return vim.fn.trim(str)
@@ -140,6 +196,13 @@ function M.is_blank(s)
 end
 
 function M.parse_remote_url(url, aliases)
+  -- filesystem path
+  if vim.startswith(url, "/") or vim.startswith(url, ".") then
+    return {
+      host = nil,
+      repo = url,
+    }
+  end
   -- remove trailing ".git"
   url = string.gsub(url, ".git$", "")
   -- remove protocol scheme
@@ -158,8 +221,8 @@ function M.parse_remote_url(url, aliases)
     repo = chunks[#chunks]
   end
 
-  if aliases[host] then
-    host = aliases[host]
+  for alias, rhost in pairs(aliases) do
+    host = host:gsub("^" .. alias .. "$", rhost, 1)
   end
   if not M.is_blank(host) and not M.is_blank(repo) then
     return {
@@ -204,6 +267,16 @@ function M.get_remote()
     host = "github.com",
     repo = nil,
   }
+end
+
+function M.get_remote_url()
+  local host = M.get_remote_host()
+  local remote_name = M.get_remote_name()
+  if not host or not remote_name then
+    M.error "No remote repository found"
+    return
+  end
+  return "https://" .. host .. "/" .. remote_name
 end
 
 function M.get_all_remotes()
@@ -354,17 +427,47 @@ function M.checkout_pr_sync(pr_number)
   }):sync()
 end
 
----Mergest a PR b number
+M.merge_method_to_flag = {
+  squash = "--squash",
+  rebase = "--rebase",
+  commit = "--merge",
+}
+
+function M.insert_merge_flag(args, method)
+  table.insert(args, M.merge_method_to_flag[method])
+end
+
+function M.insert_delete_flag(args, delete)
+  if delete then
+    table.insert(args, "--delete-branch")
+  end
+end
+
+---Merges a PR by number
 function M.merge_pr(pr_number)
   if not Job then
+    M.error "Aborting PR merge"
     return
   end
+
+  local conf = config.values
+  local args = { "pr", "merge", pr_number }
+
+  M.insert_merge_flag(args, conf.default_merge_method)
+  M.insert_delete_flag(args, conf.default_delete_branch)
+
   Job:new({
-    enable_recording = true,
     command = "gh",
-    args = { "pr", "merge", pr_number, "--merge", "--delete-branch" },
-    on_exit = vim.schedule_wrap(function()
-      M.info("Merged PR " .. pr_number .. "!")
+    args = args,
+    on_exit = vim.schedule_wrap(function(job, code)
+      if code == 0 then
+        M.info("Merged PR " .. pr_number .. "!")
+      else
+        local stderr = table.concat(job:stderr_result(), "\n")
+        if not M.is_blank(stderr) then
+          M.error(stderr)
+        end
+      end
     end),
   }):start()
 end
@@ -590,7 +693,7 @@ function M.get_repo_number_from_varargs(...)
     return
   end
   if not repo then
-    M.error "Cant find repo name"
+    M.error "Can not find repo name"
     return
   end
   if not number then

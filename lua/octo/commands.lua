@@ -94,7 +94,7 @@ function M.setup()
         picker.search(opts)
       end,
       reload = function()
-        M.reload()
+        M.reload { verbose = true }
       end,
       browser = function()
         navigation.open_in_browser()
@@ -163,10 +163,11 @@ function M.setup()
           prompt = prompt .. k .. ":" .. v .. " "
         end
         opts.prompt = prompt
+        opts.search_prs = true
         picker.search(opts)
       end,
       reload = function()
-        M.reload()
+        M.reload { verbose = true }
       end,
       browser = function()
         navigation.open_in_browser()
@@ -433,8 +434,13 @@ function M.octo(object, action, ...)
     end
 
     local a = o[action] or o
-    if not pcall(a, ...) then
+    if not a then
       utils.error(action and "Incorrect action: " .. action or "No action specified")
+      return
+    end
+    res = pcall(a, ...)
+    if not res then
+      utils.error(action and "Failed action: " .. action)
       return
     end
   end
@@ -1111,43 +1117,35 @@ function M.pr_checks()
 end
 
 function M.merge_pr(...)
-  local conf = config.values
-  local defaultMergeMethod = conf.default_merge_method
-
   local bufnr = vim.api.nvim_get_current_buf()
   local buffer = octo_buffers[bufnr]
   if not buffer or not buffer:isPullRequest() then
     return
   end
+
   local args = { "pr", "merge", tostring(buffer.number) }
   local params = table.pack(...)
-  for i = 1, params.n do
-    if params[i] == "delete" then
-      table.insert(args, "--delete-branch")
+  local conf = config.values
+
+  local merge_method = conf.default_merge_method
+  for _, param in ipairs(params) do
+    if utils.merge_method_to_flag[param] then
+      merge_method = param
     end
   end
-  local has_flag = false
-  for i = 1, params.n do
-    if params[i] == "commit" then
-      table.insert(args, "--merge")
-      has_flag = true
-    elseif params[i] == "squash" then
-      table.insert(args, "--squash")
-      has_flag = true
-    elseif params[i] == "rebase" then
-      table.insert(args, "--rebase")
-      has_flag = true
+  utils.insert_merge_flag(args, merge_method)
+
+  local delete_branch = conf.default_delete_branch
+  for _, param in ipairs(params) do
+    if param == "delete" then
+      delete_branch = true
+    end
+    if param == "nodelete" then
+      delete_branch = false
     end
   end
-  if not has_flag then
-    if defaultMergeMethod == "squash" then
-      table.insert(args, "--squash")
-    elseif defaultMergeMethod == "rebase" then
-      table.insert(args, "--rebase")
-    else
-      table.insert(args, "--merge")
-    end
-  end
+  utils.insert_delete_flag(args, delete_branch)
+
   gh.run {
     args = args,
     cb = function(output, stderr)
@@ -1435,8 +1433,8 @@ function M.remove_project_v2_card()
   end)
 end
 
-function M.reload(bufnr)
-  require("octo").load_buffer(bufnr)
+function M.reload(opts)
+  require("octo").load_buffer(opts)
 end
 
 function random_hex_color()
@@ -1669,10 +1667,14 @@ end
 function M.copy_url()
   local bufnr = vim.api.nvim_get_current_buf()
   local buffer = octo_buffers[bufnr]
-  if not buffer then
-    return
+  local url
+
+  if buffer then
+    url = buffer.node.url
+  else
+    url = utils.get_remote_url()
   end
-  local url = buffer.node.url
+
   vim.fn.setreg("+", url, "c")
   utils.info("Copied URL '" .. url .. "' to the system clipboard (+ register)")
 end
